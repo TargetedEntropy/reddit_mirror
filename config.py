@@ -22,6 +22,7 @@ class AppConfig:
     IMGUR_CLIENT_ID: str
     PRAW_USER_AGENT: str
     PRAW_USERNAME: str
+    IMGBB_API_KEY: str
 
     """
     Map environment variables to class fields according to these rules:

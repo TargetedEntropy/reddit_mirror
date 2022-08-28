@@ -13,6 +13,7 @@ import asyncpraw
 import discord
 from discord.ext import tasks
 import pyimgur
+import imgbbpy
 import aiohttp
 import aiofiles
 from config import Config
@@ -26,11 +27,12 @@ if not os.path.exists(FILES_PATH):
 
 SUBREDDITS = [
     {"name": "pics", "channel_id": 1011474405368797184},
-    {"name": "space", "channel_id": 1011788355237578285},
+    {"name": "space", "channel_id": 1011788355237578285}
 ]
 
 intents = discord.Intents.default()
 intents.members = True
+
 client = discord.Client(intents=intents)
 
 reddit = asyncpraw.Reddit(
@@ -40,8 +42,8 @@ reddit = asyncpraw.Reddit(
     username=Config.PRAW_USERNAME,
 )
 
-im = pyimgur.Imgur(Config.IMGUR_CLIENT_ID)
-
+imgur_client = pyimgur.Imgur(Config.IMGUR_CLIENT_ID)
+imgbb_client = imgbbpy.AsyncClient(Config.IMGBB_API_KEY)
 
 async def download_file(url) -> None:
     """Download and save file
@@ -75,6 +77,7 @@ async def send_channel_message(submission, channel_id) -> None:
         embed = discord.Embed(
             title=submission.title,
             url=f"https://reddit.com{submission.permalink}",
+            description=submission.selftext,
             color=0xFF5733,
         )
 
@@ -85,7 +88,7 @@ async def send_channel_message(submission, channel_id) -> None:
         print(f"Message Send failed: {error}")
 
 
-async def upload_to_imgur(file_name: str, post_title: str) -> object:
+async def upload_to_imgur(file_name: str, post_title: str = None) -> object:
     """Upload to Imgur
 
     Args:
@@ -98,11 +101,31 @@ async def upload_to_imgur(file_name: str, post_title: str) -> object:
     imgur_resp = None
 
     try:
-        imgur_resp = im.upload_image(file_name, title=post_title)
+        imgur_resp = imgur_client.upload_image(file_name, title=post_title)
     except Exception as error:
         print(f"Failed to upload to Img:{file_name} error:{error}")
 
-    return imgur_resp
+    return imgur_resp.link
+
+async def upload_to_imgbb(file_name: str) -> object:
+    """Upload to Imgbb
+
+    Args:
+        file_name (str): Name of file to upload
+        post_title (str): submission.title from Praw
+
+    Returns:
+        object: Imgur Response Object
+    """
+    
+    imgur_resp = None
+
+    try:
+        imgur_resp = await imgbb_client.upload(file=file_name)
+    except Exception as error:
+        print(f"Failed to upload to Img:{file_name} error:{error}")
+
+    return imgur_resp.url
 
 
 async def update_subreddit_posts(subreddit_name: str, channel_id: int) -> None:
@@ -133,12 +156,16 @@ async def update_subreddit_posts(subreddit_name: str, channel_id: int) -> None:
 
                     # Get the url of the mirrored iamge
                     fname = submission.url.split("/")[-1]
-                    imgur_response = await upload_to_imgur(
-                        f"{FILES_PATH}{fname}", submission.title
-                    )
+                    # imgur_response = await upload_to_imgur(
+                    #     f"{FILES_PATH}{fname}", submission.title
+                    # )
+                    
+                    imgur_response = await upload_to_imgbb(
+                        f"{FILES_PATH}{fname}"
+                    )                    
 
                     # Update object with our new URL
-                    submission.url = imgur_response.link
+                    submission.url = imgur_response
 
             # Store post to DB
             await insert_post_to_db(submission)
